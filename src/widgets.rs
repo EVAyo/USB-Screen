@@ -8,7 +8,7 @@ use image::{
     buffer::ConvertBuffer, imageops::{resize, FilterType}, Rgba, RgbaImage
 };
 use log::error;
-use offscreen_canvas::{measure_text, OffscreenCanvas, ResizeOption, RotateOption, WHITE};
+use offscreen_canvas::{OffscreenCanvas, ResizeOption, RotateOption, WHITE};
 use serde::{Deserialize, Serialize};
 use std::{any::Any, sync::{Arc, Mutex}};
 use uuid::Uuid;
@@ -443,19 +443,21 @@ impl Widget for TextWidget {
                 self.font_size = 4.;
             }
             let text = format!("{}{}", self.prefix, self.text);
+            // 统一使用 context.measure_text 测量文字宽度，确保与绘制时一致
             let text_rect = context.measure_text(&text, self.font_size);
-            let width = self.width.unwrap_or(text_rect.width());
-            let height = self.height.unwrap_or(text_rect.height());
+            let text_width = text_rect.width();
+            let text_height = text_rect.height();
+            let width = self.width.unwrap_or(text_width);
+            let height = self.height.unwrap_or(text_height);
             let alignment = self.alignment.clone().unwrap_or("".to_string());
             if self.width.is_some() && alignment.len() > 0{
                 self.position.set_width_and_height(width, height);
-                let text_rect = measure_text(&text, self.font_size, context.font());
                 if alignment == "居中"{
                     context.draw_text(
                         &text,
                         Rgba(self.color),
                         self.font_size,
-                        self.position.center().0 - text_rect.width()/2,
+                        self.position.center().0 - text_width/2,
                         self.position.top,
                     );
                 }else if alignment == "居左"{
@@ -467,11 +469,12 @@ impl Widget for TextWidget {
                         self.position.top,
                     );
                 }else if alignment == "居右"{
+                    // 右对齐：文字右边界对齐到 position.right
                     context.draw_text(
                         &text,
                         Rgba(self.color),
                         self.font_size,
-                        self.position.right - text_rect.width(),
+                        self.position.right - text_width,
                         self.position.top,
                     );
                 }
