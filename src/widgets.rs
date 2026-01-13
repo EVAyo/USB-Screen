@@ -10,7 +10,7 @@ use image::{
 use log::error;
 use offscreen_canvas::{measure_text, OffscreenCanvas, ResizeOption, RotateOption, WHITE};
 use serde::{Deserialize, Serialize};
-use std::{any::Any, sync::{atomic::{AtomicPtr, Ordering}, Arc, Mutex}};
+use std::{any::Any, sync::{Arc, Mutex}};
 use uuid::Uuid;
 
 static DEFAULT_IMAGE: &[u8] = include_bytes!("../images/icon_photo.png");
@@ -557,7 +557,7 @@ impl ImageData {
                 let mut screen = gif_dispose::Screen::new_decoder(&decoder);
 
                 while let Some(frame) = decoder.read_next_frame()? {
-                    screen.blit_frame(&frame)?;
+                    screen.blit_frame(frame)?;
                     let rgba = screen.pixels_rgba();
                     let mut pixels = Vec::with_capacity(rgba.width() * rgba.height() * 4);
                     for pixel in rgba.pixels() {

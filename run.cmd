@@ -1,1 +1,1 @@
-cargo run editor
+cargo run --features "editor,tray" -- editor

@@ -78,7 +78,7 @@ fn open_usb_screen(file: String) -> Result<()>{
     
     let mut usb_screen = None;
 
-    if let Some(ip) = render.device_ip.as_ref(){
+    if let Some(_ip) = render.device_ip.as_ref(){
         info!("设置了ip地址，使用wifi屏幕..");
     }else {
         info!("未设置ip地址，使用 USB屏幕...");
@@ -148,6 +148,7 @@ fn open_usb_screen(file: String) -> Result<()>{
     }
 }
 
+#[allow(unreachable_code)]
 fn create_tray_icon(file: String) -> Result<()> {
 
     #[cfg(not(feature = "editor"))]

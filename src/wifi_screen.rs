@@ -162,7 +162,7 @@ fn start(receiver: Receiver<Message>){
                                 Ok(cfg) => {
                                     display_config = Some(cfg);
                                 }
-                                Err(err) => {
+                                Err(_err) => {
                                     eprintln!("Message::Image display config获取失败!");
                                     eprintln!("err:?");
                                     std::thread::sleep(Duration::from_secs(3));

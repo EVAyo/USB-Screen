@@ -349,9 +349,9 @@ fn start_refresh_task(ctx: Arc<RwLock<SystemInfo>>) {
                 }
 
                 if watch_cpu {
-                    sysinfo_system.refresh_cpu();
+                    sysinfo_system.refresh_cpu_all();
                     let cpus = sysinfo_system.cpus();
-                    let cpu_usage = sysinfo_system.global_cpu_info().cpu_usage();
+                    let cpu_usage = sysinfo_system.global_cpu_usage();
 
                     try_write(|mut ctx| {
                         ctx.num_cpus = format!("{}", cpus.len());
@@ -394,7 +394,7 @@ fn start_refresh_task(ctx: Arc<RwLock<SystemInfo>>) {
                     });
                 }
                 if watch_disk {
-                    sysinfo_disks.refresh_list();
+                    sysinfo_disks.refresh(true);
                     try_write(|mut ctx| {
                         for (disk_idx, disk) in sysinfo_disks.iter().enumerate() {
                             let path = disk.mount_point().to_str().unwrap_or("").replace("\\", "");
@@ -440,7 +440,7 @@ fn start_refresh_task(ctx: Arc<RwLock<SystemInfo>>) {
                 }
 
                 if watch_process {
-                    sysinfo_system.refresh_processes();
+                    sysinfo_system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
                     try_write(|mut ctx| {
                         ctx.num_process = format!("{}", sysinfo_system.processes().keys().len());
                     });
@@ -1083,7 +1083,7 @@ pub fn start_network_counter_thread() -> std::thread::JoinHandle<()> {
                 continue;
             }
 
-            networks.refresh();
+            networks.refresh(true);
             std::thread::sleep(delay);
 
             //只显示网速最大的网卡数据
