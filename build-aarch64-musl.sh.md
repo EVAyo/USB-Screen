@@ -6,11 +6,13 @@
 #
 
 # 启动docker后运行
-# 复制出来再运行
-bash
-rm Cargo.lock
-cargo install cross --git https://github.com/cross-rs/cross
-cross build --target aarch64-unknown-linux-musl --release #如果编译失败，使用 crates.io 编译！不要用rxproxy
+# cargo zbuild 本身支持交叉编译
+
+# 安装目标工具链
+rustup target add aarch64-unknown-linux-musl
+
+# 使用 cargo zbuild 交叉编译
+cargo zbuild --target aarch64-unknown-linux-musl
 
 # openwrp配置花生壳教程
 https://service.oray.com/question/20547.html

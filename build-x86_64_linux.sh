@@ -7,8 +7,13 @@
 #
 # cargo install cross --git https://github.com/cross-rs/cross
 # cross build --target x86_64-unknown-linux-gnu --release
+
+# sudo apt-get update
+# sudo apt-get install clang libclang-dev llvm-dev
 bash
-cargo build --target x86_64-unknown-linux-gnu --release
+# cargo build --target x86_64-unknown-linux-gnu --release
+
+cargo zbuild --target x86_64-unknown-linux-gnu
 
 # https://github.com/johnthagen/min-sized-rust
 # rustup component add rust-src --toolchain nightly
