@@ -1,6 +1,8 @@
 # USB Screen
  USB屏幕&编辑器
 
+ ![capture](images/capture.png)
+
 # 图文教程:
 
 # [https://zhuanlan.zhihu.com/p/698789562](https://zhuanlan.zhihu.com/p/698789562)
