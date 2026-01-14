@@ -91,11 +91,25 @@ fn main() -> Result<()> {
 
     info!("screen_file={:?}", screen_file);
 
+    // 没有 .screen 文件时的处理
     if screen_file.is_none() {
-        eprintln!("错误: 未找到 .screen 文件!");
-        eprintln!("用法: USB-Screen <screen文件路径>");
-        eprintln!("      或在当前目录放置 .screen 文件");
-        return Ok(());
+        #[cfg(feature = "editor")]
+        {
+            // 启用 editor 时直接打开编辑器
+            eprintln!("未找到 .screen 文件, 启动编辑器...");
+            info!("editor start!");
+            editor::run()?;
+            monitor::clean();
+            return Ok(());
+        }
+        
+        #[cfg(not(feature = "editor"))]
+        {
+            eprintln!("错误: 未找到 .screen 文件!");
+            eprintln!("用法: USB-Screen <screen文件路径>");
+            eprintln!("      或在当前目录放置 .screen 文件");
+            return Ok(());
+        }
     }
 
     if let Some(file) = screen_file {
