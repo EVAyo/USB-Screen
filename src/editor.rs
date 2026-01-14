@@ -8,7 +8,7 @@ use image::buffer::ConvertBuffer;
 use image::RgbaImage;
 use image::{imageops::resize, RgbImage};
 use log::{error, info};
-use offscreen_canvas::{OffscreenCanvas, BLUE, WHITE};
+use crate::offscreen_canvas::{OffscreenCanvas, BLUE, WHITE, Rect as CanvasRect};
 use rfd::AsyncFileDialog;
 use slint::private_unstable_api::re_exports::KeyEvent;
 use slint::{
@@ -280,7 +280,7 @@ impl CanvasEditorContext {
             for widget in &mut self.screen.widgets {
                 if widget.id() == active_id {
                     let rect = widget.position();
-                    let mut rect = offscreen_canvas::Rect {
+                    let mut rect = CanvasRect {
                         left: rect.left,
                         top: rect.top,
                         right: rect.right,
@@ -292,7 +292,7 @@ impl CanvasEditorContext {
                         if widget.type_name != "weather" && widget.type_name != "uptime" && (widget.tag1 == "1" || widget.tag1 == "2") {
                             let width = widget.width.unwrap_or(widget.font_size as i32 * 5);
                             let height = widget.height.unwrap_or(widget.font_size as i32);
-                            rect = offscreen_canvas::Rect::from(
+                            rect = CanvasRect::from(
                                 rect.left,
                                 rect.top,
                                 width,
@@ -311,7 +311,7 @@ impl CanvasEditorContext {
                     //其他按照位置为大小
                     self.screen.canvas.stroke_rect(rect, BLUE);
                     self.screen.canvas.stroke_rect(
-                        offscreen_canvas::Rect::new(
+                        CanvasRect::new(
                             rect.left - 1,
                             rect.top - 1,
                             rect.right + 1,

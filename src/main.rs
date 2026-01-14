@@ -21,6 +21,7 @@ mod usb_screen;
 mod wifi_screen;
 mod utils;
 mod widgets;
+mod offscreen_canvas;
 #[cfg(all(not(windows),feature = "v4l-webcam"))]
 mod yuv422;
 

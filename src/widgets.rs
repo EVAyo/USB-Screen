@@ -8,7 +8,7 @@ use image::{
     buffer::ConvertBuffer, imageops::{resize, FilterType}, Rgba, RgbaImage
 };
 use log::error;
-use offscreen_canvas::{OffscreenCanvas, ResizeOption, RotateOption, WHITE};
+use crate::offscreen_canvas::{OffscreenCanvas, ResizeOption, RotateOption, WHITE, Rect as CanvasRect};
 use serde::{Deserialize, Serialize};
 use std::{any::Any, sync::{Arc, Mutex}};
 use uuid::Uuid;
@@ -414,7 +414,7 @@ impl Widget for TextWidget {
                 if self.font_size <= 2. {
                     self.font_size = 2.;
                 }
-                let rect = offscreen_canvas::Rect::from(
+                let rect = CanvasRect::from(
                     self.position.left,
                     self.position.top,
                     rect_width,
@@ -430,7 +430,7 @@ impl Widget for TextWidget {
                 if self.font_size <= 2. {
                     self.font_size = 2.;
                 }
-                let rect = offscreen_canvas::Rect::from(
+                let rect = CanvasRect::from(
                     self.position.left,
                     self.position.top+(height-rect_height),
                     width,
@@ -652,7 +652,7 @@ impl ImageWidget {
 impl Widget for ImageWidget {
     fn draw(&mut self, context: &mut OffscreenCanvas) {
         if let Some(color) = self.color.as_ref() {
-            let rect = offscreen_canvas::Rect::from(
+            let rect = CanvasRect::from(
                 self.position.left,
                 self.position.top,
                 self.position.width(),
@@ -665,13 +665,13 @@ impl Widget for ImageWidget {
             //获取相机图像
             if let Some(image) = webcam_frame(){
                 let src =
-                    offscreen_canvas::Rect::new(0, 0, image.width() as i32, image.height() as i32);
+                    CanvasRect::new(0, 0, image.width() as i32, image.height() as i32);
 
                 //按照宽度比例绘制
                 let width = self.position.width();
                 let height = ((image.height() as f32 / image.width() as f32)*width as f32) as i32;
                 
-                let pos = offscreen_canvas::Rect::from(
+                let pos = CanvasRect::from(
                     self.position.left,
                     self.position.top,
                     width,
@@ -681,7 +681,7 @@ impl Widget for ImageWidget {
                 context.draw_image_with_src_and_dst(&image.convert(), &src, &pos, FilterType::Nearest);
             }else{
                 //未打开相机，显示白色
-                let rect = offscreen_canvas::Rect::from(
+                let rect = CanvasRect::from(
                     self.position.left,
                     self.position.top,
                     self.position.width(),
@@ -699,8 +699,8 @@ impl Widget for ImageWidget {
                 self.image_data.frames[self.frame_index].clone(),
             ).unwrap_or(RgbaImage::new(30, 30));
             let src =
-                offscreen_canvas::Rect::new(0, 0, image.width() as i32, image.height() as i32);
-            let pos = offscreen_canvas::Rect::from(
+                CanvasRect::new(0, 0, image.width() as i32, image.height() as i32);
+            let pos = CanvasRect::from(
                 self.position.left,
                 self.position.top,
                 self.position.width(),
@@ -798,7 +798,7 @@ pub mod v10{
     impl Widget for ImageWidget {
         fn draw(&mut self, context: &mut OffscreenCanvas) {
             if let Some(color) = self.color.as_ref() {
-                let rect = offscreen_canvas::Rect::from(
+                let rect = CanvasRect::from(
                     self.position.left,
                     self.position.top,
                     self.position.width(),
@@ -815,8 +815,8 @@ pub mod v10{
                     self.image_data.frames[self.frame_index].clone(),
                 ).unwrap_or(RgbaImage::new(30, 30));
                 let src =
-                    offscreen_canvas::Rect::new(0, 0, image.width() as i32, image.height() as i32);
-                let pos = offscreen_canvas::Rect::from(
+                    CanvasRect::new(0, 0, image.width() as i32, image.height() as i32);
+                let pos = CanvasRect::from(
                     self.position.left,
                     self.position.top,
                     self.position.width(),

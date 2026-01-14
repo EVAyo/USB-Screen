@@ -9,7 +9,7 @@ use anyhow::{anyhow, Result};
 use async_std::fs;
 use log::info;
 use lz4_flex::{compress_prepend_size, decompress_size_prepended};
-use offscreen_canvas::{Font, FontSettings, OffscreenCanvas, BLACK};
+use crate::offscreen_canvas::{Font, FontSettings, OffscreenCanvas, BLACK};
 use serde::{Deserialize, Serialize};
 
 pub static DEFAULT_FONT: &[u8] = include_bytes!("../fonts/VonwaonBitmap-16px.ttf");
