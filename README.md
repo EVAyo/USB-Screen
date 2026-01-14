@@ -145,95 +145,94 @@ ESP32 屏幕的固件烧录、WiFi配置、屏幕参数设置等详细说明，�
 
 # 编译
 
-## 编译aarch64-linux
+所有编译脚本都使用 `cargo zbuild` 进行交叉编译，自动指定 features，**无需手动修改 Cargo.toml**。
 
-1、设置default features，启用 v4l-webcam
+## 前置要求
 
-```toml
-[features]
-default = ["v4l-webcam", "usb-serial"]
+1. 安装 Rust: https://rustup.rs
+2. 安装 cargo-zbuild: `cargo install cargo-zbuild`
+3. 安装 Docker Desktop (交叉编译需要)
+
+## 编译脚本一览
+
+| 脚本 | 目标平台 | Features | 说明 |
+|------|----------|----------|------|
+| `build-x86_64_windows.cmd` | Windows x64 | editor, tray, nokhwa-webcam, usb-serial | Windows 桌面版 |
+| `build-x86_64_linux.cmd` | x86_64 Linux (gnu) | editor, v4l-webcam, usb-serial | Linux 桌面版 (默认带 editor) |
+| `build-x86_64_linux.cmd no-editor` | x86_64 Linux (gnu) | v4l-webcam, usb-serial | Linux 无桌面版 |
+| `build-x86_64_linux_musl.cmd` | x86_64 Linux (musl) | usb-serial | 静态链接版本，兼容性好 |
+| `build-aarch64-musl.cmd` | OpenWrt ARM64 | v4l-webcam, usb-serial | 路由器/嵌入式设备 |
+
+## Windows 编译
+
+```cmd
+:: 需要以管理员身份运行 (读取硬件信息)
+.\build-x86_64_windows.cmd
 ```
 
-2、启动 DockerDesktop
+输出文件: `target/x86_64-pc-windows-msvc/release/USB-Screen.exe`
 
-3、进入 wsl2 Ubuntu
+## x86_64 Linux 编译 (带 editor)
 
-4、安装 cross
-
-```shell
-cargo install cross --git https://github.com/cross-rs/cross
+```cmd
+:: 需要启动 Docker Desktop
+.\build-x86_64_linux.cmd
 ```
 
-5、编译
+输出文件: `target/x86_64-unknown-linux-gnu/release/USB-Screen`
 
-注意 Cross.toml 中的配置
+## x86_64 Linux 编译 (无 editor)
 
-```shell
-# rustup component add rust-src --toolchain nightly
-RUSTFLAGS="-Zlocation-detail=none" cross +nightly build -Z build-std=std,panic_abort \
-  -Z build-std-features=panic_immediate_abort \
-  -Z build-std-features="optimize_for_size" \
-  --target aarch64-unknown-linux-gnu --release
+```cmd
+:: 需要启动 Docker Desktop
+.\build-x86_64_linux.cmd no-editor
+```
+
+## OpenWrt ARM64 (aarch64) 编译
+
+```cmd
+:: 需要启动 Docker Desktop
+.\build-aarch64-musl.cmd
+```
+
+输出文件: `target/aarch64-unknown-linux-musl/release/USB-Screen`
+
+## 飞牛私有云 fnOS 编译
+
+飞牛 fnOS 推荐使用 musl 静态链接版本，兼容性更好：
+
+```cmd
+:: 需要启动 Docker Desktop
+.\build-x86_64_linux_musl.cmd
+```
+
+输出文件: `target/x86_64-unknown-linux-musl/release/USB-Screen`
+
+如果需要 v4l 摄像头功能，使用 gnu 版本：
+
+```cmd
+.\build-x86_64_linux.cmd no-editor
 ```
 
 # 运行编辑器
 
-## windows中运行
-
-设置 deault features
-
-```toml
-[features]
-default = ["editor", "tray", "nokhwa-webcam"]
-```
+## Windows 中运行
 
 ```cmd
-./run.cmd
+.\run.cmd
 ```
 
-## Ubuntu中运行
-
-设置 deault features
-
-```toml
-[features]
-default = ["editor", "v4l-webcam"]
-```
+## Ubuntu 中运行
 
 ```bash
-# export https_proxy=http://192.168.1.25:6003;export http_proxy=http://192.168.1.25:6003;export all_proxy=socks5://192.168.1.25:6003
-# export https_proxy=;export http_proxy=;export all_proxy=;
+# 安装依赖
 sudo apt-get install -y libclang-dev libv4l-dev libudev-dev
 
+# 运行
 sh run.sh
-# sudo ./target/debug/USB-Screen
-# sudo ./target/debug/USB-Screen editor
 
-## v4l utils
-## sudo apt install v4l-utils
-## v4l2-ctl  --list-formats -d /dev/video0
-## v4l2-ctl --list-formats-ext -d /dev/video0
-```
-
-## 飞牛私有云 fnOS 编译
-
-```bash
-# 切换到root模式(登录 planet,root123)
-sudo -i
-# 首先安装rust
-# ...
-# 飞牛OS编译前需要升级libc6=2.36-9+deb12u9
-sudo apt-get install aptitude
-aptitude install libc6=2.36-9+deb12u9
-apt install build-essential
-#安装依赖库
-apt install pkg-config
-sudo apt-get install -y libclang-dev libv4l-dev libudev-dev
-# 打开x86_64 linux编译特征
-# ！！注意关闭 editor特征！！
-# x86_64 linux
-# default = ["v4l-webcam", "usb-serial"]
-# 克隆然后编译
-rm Cargo.lock
-cargo build --release
+# v4l utils (可选，用于调试摄像头)
+# sudo apt install v4l-utils
+# v4l2-ctl --list-formats -d /dev/video0
+# v4l2-ctl --list-formats-ext -d /dev/video0
 ```

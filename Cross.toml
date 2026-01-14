@@ -5,10 +5,16 @@ pre-build = [
 ]
 
 [target.x86_64-unknown-linux-gnu]
+# 使用较新的镜像解决 GLIBC 版本问题
+image = "ghcr.io/cross-rs/x86_64-unknown-linux-gnu:main"
+# 基础依赖 + slint(editor) 所需的图形库依赖
 pre-build = [
     "dpkg --add-architecture $CROSS_DEB_ARCH",
-    "apt-get update && apt-get install -y libclang-dev libv4l-dev libudev-dev:$CROSS_DEB_ARCH",
+    "apt-get update && apt-get install -y libclang-dev libv4l-dev libudev-dev:$CROSS_DEB_ARCH libxcb-shape0-dev:$CROSS_DEB_ARCH libxcb-xfixes0-dev:$CROSS_DEB_ARCH libxkbcommon-dev:$CROSS_DEB_ARCH libfontconfig1-dev:$CROSS_DEB_ARCH",
 ]
+
+[target.x86_64-unknown-linux-gnu.env]
+passthrough = ["RUST_BACKTRACE"]
 
 [target.aarch64-unknown-linux-musl]
 pre-build = [
