@@ -103,7 +103,7 @@ https://github.com/planet0104/rp2040_usb_screen
 | RST/RES | GPIO8 | 复位 |
 | DC/AO | GPIO5 | 数据/命令选择 |
 | CS | GPIO4 | 片选（部分屏幕需要） |
-| BL/BLK | 悬空或 VBUS | 背光（可接 VBUS 5V） |
+| BL/BLK | GPIO13 | 背光亮度控制 |
 
 ### 连接方式
 
