@@ -2,9 +2,10 @@
 //! 用于替换 offscreen-canvas 库
 
 use ab_glyph::{point, FontRef, GlyphId, OutlinedGlyph, PxScale, ScaleFont};
+use embedded_graphics::geometry::AngleUnit;
 use embedded_graphics::pixelcolor::Rgb888;
 use embedded_graphics::prelude::*;
-use embedded_graphics::primitives::{PrimitiveStyle, PrimitiveStyleBuilder};
+use embedded_graphics::primitives::{Arc, PrimitiveStyle, PrimitiveStyleBuilder};
 use image::imageops::{overlay, FilterType};
 use image::{Pixel, Rgb, Rgba, RgbaImage};
 
@@ -238,6 +239,86 @@ impl OffscreenCanvas {
         );
         let rotated = rotate_image(&resized, rotate_opt.center, rotate_opt.angle);
         overlay(&mut self.buffer, &rotated, dst.left as i64, dst.top as i64);
+    }
+
+    /// 绘制环形进度条
+    /// cx, cy: 圆心坐标
+    /// radius: 半径
+    /// stroke_width: 线宽
+    /// start_angle: 起始角度 (度数, 0=上, 90=右, 180=下, 270=左)
+    /// percent: 进度百分比 (0.0 - 100.0)
+    /// fg_color: 前景色
+    /// bg_color: 背景色
+    /// round_cap: 是否圆角端点
+    pub fn draw_ring_progress(
+        &mut self,
+        cx: i32,
+        cy: i32,
+        radius: u32,
+        stroke_width: u32,
+        start_angle: i32,
+        percent: f32,
+        fg_color: Rgba<u8>,
+        bg_color: Rgba<u8>,
+        round_cap: bool,
+    ) {
+        let diameter = radius * 2;
+        let top_left = Point::new(cx - radius as i32, cy - radius as i32);
+        // embedded-graphics 屏幕坐标系: 0度=右, 90度=下, 正角度顺时针
+        // 用户坐标系: 0度=上, 90度=右, 顺时针增加
+        // 转换: eg_angle = user_angle - 90
+        let eg_start = (start_angle - 90) as f32;
+        
+        // 绘制背景圆环 (完整的360度)
+        let bg_rgb = Rgb888::new(bg_color.0[0], bg_color.0[1], bg_color.0[2]);
+        let bg_arc = Arc::new(top_left, diameter, eg_start.deg(), 360.0_f32.deg());
+        let bg_style = PrimitiveStyle::with_stroke(bg_rgb, stroke_width);
+        for p in bg_arc.into_styled(bg_style).pixels() {
+            self.set_pixel(p.0.x, p.0.y, bg_color);
+        }
+
+        // 绘制前景进度 (顺时针方向, 正角度)
+        if percent > 0.0 {
+            let sweep_angle = 360.0 * (percent / 100.0);
+            let fg_rgb = Rgb888::new(fg_color.0[0], fg_color.0[1], fg_color.0[2]);
+            let fg_arc = Arc::new(top_left, diameter, eg_start.deg(), sweep_angle.deg());
+            let fg_style = PrimitiveStyle::with_stroke(fg_rgb, stroke_width);
+            for p in fg_arc.into_styled(fg_style).pixels() {
+                self.set_pixel(p.0.x, p.0.y, fg_color);
+            }
+
+            // 绘制圆角端点
+            if round_cap && stroke_width > 2 {
+                let cap_radius = stroke_width / 2;
+                // embedded-graphics 的 Arc stroke 是居中绘制的
+                // 所以圆弧的中心线就在 radius 位置
+                self.draw_round_cap(cx, cy, radius, start_angle, cap_radius, fg_color);
+                let end_angle = start_angle + (360.0 * percent / 100.0) as i32;
+                self.draw_round_cap(cx, cy, radius, end_angle, cap_radius, fg_color);
+            }
+        }
+    }
+
+    /// 绘制圆角端点
+    /// angle: 用户角度 (0=上, 90=右, 180=下, 270=左, 顺时针)
+    fn draw_round_cap(&mut self, cx: i32, cy: i32, arc_center_radius: u32, angle: i32, cap_radius: u32, color: Rgba<u8>) {
+        // 用户角度转换到屏幕坐标:
+        // 0度在上方(y减少), 顺时针增加
+        // 使用 sin 作为 x 偏移, -cos 作为 y 偏移
+        let rad = (angle as f32).to_radians();
+        // 使用 round() 四舍五入避免1像素偏移
+        let cap_cx = (cx as f32 + arc_center_radius as f32 * rad.sin()).round() as i32;
+        let cap_cy = (cy as f32 - arc_center_radius as f32 * rad.cos()).round() as i32;
+        
+        let rgb = Rgb888::new(color.0[0], color.0[1], color.0[2]);
+        let circle = embedded_graphics::primitives::Circle::new(
+            Point::new(cap_cx - cap_radius as i32, cap_cy - cap_radius as i32),
+            cap_radius * 2,
+        );
+        let style = PrimitiveStyle::with_fill(rgb);
+        for p in circle.into_styled(style).pixels() {
+            self.set_pixel(p.0.x, p.0.y, color);
+        }
     }
 }
 

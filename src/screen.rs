@@ -3,7 +3,7 @@ use std::{collections::HashMap, path::PathBuf};
 use crate::{
     monitor::{self, WebcamInfo},
     nmc::CITIES,
-    widgets::{ImageWidget, SaveableWidget, TextWidget, Widget},
+    widgets::{ImageWidget, ProgressWidget, SaveableWidget, TextWidget, Widget},
 };
 use anyhow::{anyhow, Result};
 use async_std::fs;
@@ -194,6 +194,9 @@ impl ScreenRender {
 
         let widget: Box<dyn Widget> = if type_name == "images" || type_name == "webcam" {
             Box::new(ImageWidget::new(x, y, &type_name))
+        } else if type_name == "ring_progress" {
+            // 环形进度条默认使用 cpu_usage 数据源
+            Box::new(ProgressWidget::new(x, y, "cpu_usage", crate::widgets::ProgressType::Ring))
         } else {
             let mut text_index = 1;
             for w in self.widgets.iter_mut() {
@@ -273,6 +276,9 @@ impl ScreenRender {
                 SaveableWidget::ImageWidget(img) => {
                     self.widgets.push(Box::new(img));
                 }
+                SaveableWidget::ProgressWidget(prog) => {
+                    self.widgets.push(Box::new(prog));
+                }
             }
         }
         Ok(())
@@ -304,6 +310,9 @@ impl ScreenRender {
                 }
                 SaveableWidget::ImageWidget(img) => {
                     render.widgets.push(Box::new(img));
+                }
+                SaveableWidget::ProgressWidget(prog) => {
+                    render.widgets.push(Box::new(prog));
                 }
             }
         }
@@ -339,6 +348,11 @@ impl ScreenRender {
                 saveable
                     .widgets
                     .push(SaveableWidget::ImageWidget(widget.clone()));
+            }
+            if let Some(widget) = self.widgets[idx].as_any_mut().downcast_mut::<ProgressWidget>() {
+                saveable
+                    .widgets
+                    .push(SaveableWidget::ProgressWidget(widget.clone()));
             }
         }
         let json = serde_json::to_string(&saveable)?;
@@ -379,6 +393,11 @@ impl ScreenRender {
                 saveable
                     .widgets
                     .push(SaveableWidget::ImageWidget(widget.clone()));
+            }
+            if let Some(widget) = self.widgets[idx].as_any_mut().downcast_mut::<ProgressWidget>() {
+                saveable
+                    .widgets
+                    .push(SaveableWidget::ProgressWidget(widget.clone()));
             }
         }
         Ok(saveable)

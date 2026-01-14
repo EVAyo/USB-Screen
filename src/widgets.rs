@@ -764,10 +764,200 @@ impl Widget for ImageWidget {
     }
 }
 
+/// 进度条类型
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub enum ProgressType {
+    Horizontal,  // 水平进度条
+    Vertical,    // 垂直进度条
+    Ring,        // 环形进度条
+}
+
+impl Default for ProgressType {
+    fn default() -> Self {
+        Self::Horizontal
+    }
+}
+
+/// 进度条组件
+#[derive(Clone, Deserialize, Serialize)]
+pub struct ProgressWidget {
+    pub id: String,
+    pub position: Rect,
+    pub type_name: String,           // 数据源: cpu_usage, memory_percent 等
+    pub progress_type: ProgressType,
+    
+    // 颜色配置
+    pub foreground_color: [u8; 4],   // 前景色
+    pub background_color: [u8; 4],   // 背景色
+    
+    // 尺寸配置
+    pub width: i32,
+    pub height: i32,
+    
+    // 环形进度条配置
+    pub radius: i32,                 // 半径
+    pub stroke_width: f32,           // 线宽
+    pub start_angle: i32,            // 起始角度: 0/90/180/270
+    pub round_cap: bool,             // 两端圆形
+    
+    // 运行时数据
+    pub num_widget_index: usize,
+    pub num_widget: usize,
+}
+
+impl ProgressWidget {
+    pub fn new(x: i32, y: i32, type_name: &str, progress_type: ProgressType) -> Self {
+        let (width, height) = match progress_type {
+            ProgressType::Horizontal => (60, 10),
+            ProgressType::Vertical => (10, 60),
+            ProgressType::Ring => (50, 50),
+        };
+        let radius = width.min(height) / 2;
+        Self {
+            id: Uuid::new_v4().to_string(),
+            position: Rect::from(x - width / 2, y - height / 2, width, height),
+            type_name: type_name.to_string(),
+            progress_type,
+            foreground_color: [0, 200, 100, 255],  // 绿色
+            background_color: [60, 60, 60, 255],   // 深灰色
+            width,
+            height,
+            radius,
+            stroke_width: 6.0,
+            start_angle: 0,  // 从上方开始
+            round_cap: true,
+            num_widget_index: 0,
+            num_widget: 1,
+        }
+    }
+
+    /// 从 TextWidget 转换 (兼容老版本)
+    pub fn from_text_widget(txt: &TextWidget) -> Self {
+        let progress_type = if txt.tag1 == "1" {
+            ProgressType::Horizontal
+        } else {
+            ProgressType::Vertical
+        };
+        let width = txt.width.unwrap_or(txt.font_size as i32 * 5);
+        let height = txt.height.unwrap_or(txt.font_size as i32);
+        let radius = width.min(height) / 2;
+        Self {
+            id: txt.id.clone(),
+            position: txt.position.clone(),
+            type_name: txt.type_name.clone(),
+            progress_type,
+            foreground_color: txt.color,
+            background_color: [60, 60, 60, 255],
+            width,
+            height,
+            radius,
+            stroke_width: 6.0,
+            start_angle: 0,
+            round_cap: true,
+            num_widget_index: txt.num_widget_index,
+            num_widget: txt.num_widget,
+        }
+    }
+
+    /// 获取进度值
+    fn get_percent(&self) -> f32 {
+        let text = match self.type_name.as_str() {
+            "cpu_usage" => {
+                if self.num_widget == 1 {
+                    monitor::cpu_usage()
+                } else {
+                    monitor::cpu_usage_percpu(self.num_widget_index)
+                }
+            }
+            "memory_percent" => monitor::memory_percent(),
+            "swap_percent" => monitor::swap_percent(),
+            "gpu_load" => monitor::gpu_load(self.num_widget_index),
+            "gpu_memory_load" => monitor::gpu_memory_load(self.num_widget_index),
+            "cpu_temp." => monitor::cpu_temperature(),
+            "gpu_temp." => monitor::gpu_temperature(self.num_widget_index),
+            "disk_usage" => monitor::disk_usage(self.num_widget_index),
+            _ => None,
+        };
+        text.unwrap_or_default()
+            .replace("%", "")
+            .replace("°C", "")
+            .parse::<f32>()
+            .unwrap_or(0.0)
+    }
+}
+
+impl Widget for ProgressWidget {
+    fn draw(&mut self, context: &mut OffscreenCanvas) {
+        let percent = self.get_percent();
+        let fg = Rgba(self.foreground_color);
+        let bg = Rgba(self.background_color);
+
+        match self.progress_type {
+            ProgressType::Horizontal => {
+                // 绘制背景
+                let bg_rect = CanvasRect::from(
+                    self.position.left, self.position.top,
+                    self.width, self.height,
+                );
+                context.fill_rect(bg_rect, bg);
+                // 绘制前景
+                let fg_width = ((self.width as f32) * (percent / 100.0)).max(1.0) as i32;
+                let fg_rect = CanvasRect::from(
+                    self.position.left, self.position.top,
+                    fg_width, self.height,
+                );
+                context.fill_rect(fg_rect, fg);
+            }
+            ProgressType::Vertical => {
+                // 绘制背景
+                let bg_rect = CanvasRect::from(
+                    self.position.left, self.position.top,
+                    self.width, self.height,
+                );
+                context.fill_rect(bg_rect, bg);
+                // 绘制前景 (从底部开始)
+                let fg_height = ((self.height as f32) * (percent / 100.0)).max(1.0) as i32;
+                let fg_rect = CanvasRect::from(
+                    self.position.left,
+                    self.position.top + (self.height - fg_height),
+                    self.width, fg_height,
+                );
+                context.fill_rect(fg_rect, fg);
+            }
+            ProgressType::Ring => {
+                let cx = self.position.left + self.width / 2;
+                let cy = self.position.top + self.height / 2;
+                context.draw_ring_progress(
+                    cx, cy, self.radius as u32,
+                    self.stroke_width as u32,
+                    self.start_angle,
+                    percent, fg, bg,
+                    self.round_cap,
+                );
+            }
+        }
+    }
+
+    fn id(&self) -> &str { &self.id }
+    fn position(&self) -> &Rect { &self.position }
+    fn position_mut(&mut self) -> &mut Rect { &mut self.position }
+    fn type_name(&self) -> &str { &self.type_name }
+    fn as_any_mut(&mut self) -> &mut dyn Any { self }
+    fn index(&self) -> usize { self.num_widget_index }
+    fn set_index(&mut self, idx: usize) { self.num_widget_index = idx; }
+    fn num_widget(&self) -> usize { self.num_widget }
+    fn set_num_widget(&mut self, num: usize) { self.num_widget = num; }
+
+    fn is_text(&self) -> bool { false }
+    fn is_image(&self) -> bool { false }
+    fn get_label(&self) -> &str { "进度条" }
+}
+
 #[derive(Clone, Deserialize, Serialize)]
 pub enum SaveableWidget {
     TextWidget(TextWidget),
     ImageWidget(ImageWidget),
+    ProgressWidget(ProgressWidget),
 }
 
 //老版本

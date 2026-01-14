@@ -82,7 +82,8 @@ export component CanvasEditor inherits Window{
         {name: "weekday", icon: @image-url("../images/icon_date1.png"), text: "星期" },
         {name: "lunar_year", icon: @image-url("../images/icon_lunar1.png"), text: "农历年" },
         {name: "lunar_date", icon: @image-url("../images/icon_lunar2.png"), text: "农历日" },
-        {name: "weather", icon: @image-url("../images/icon_weather.png"), text: "天气" }
+        {name: "weather", icon: @image-url("../images/icon_weather.png"), text: "天气" },
+        {name: "ring_progress", icon: @image-url("../images/icon_percent.png"), text: "环形进度" }
     ];
 
     in property <[WidgetObject]> object_list: [
@@ -121,6 +122,21 @@ export component CanvasEditor inherits Window{
     in-out property <image> active_widget_image;
     in-out property <string> active_widget_image_color_str;
     in-out property <string> active_widget_type_name: "memory_percent";
+    // 环形进度条专属属性
+    in-out property <string> active_progress_fg_color: "#00C864";
+    in-out property <string> active_progress_bg_color: "#3C3C3C";
+    in-out property <color> active_progress_fg_color_display: #00C864;
+    in-out property <color> active_progress_bg_color_display: #3C3C3C;
+    in-out property <string> active_progress_stroke_width: "6";
+    in-out property <string> active_progress_radius: "25";
+    in-out property <int> active_progress_start_angle: 0;
+    in-out property <bool> active_progress_round_cap: true;
+    in-out property <string> active_progress_data_source: "cpu_usage";
+    // 0=无, 1=前景色, 2=背景色
+    in-out property <int> progress_color_picker_target: 0;
+    callback update-progress-config();
+    callback update-progress-fg-color();
+    callback update-progress-bg-color();
     in-out property <string> font-name: "凤凰点阵";
     in-out property <int> rotation_deg: 0;
     in-out property <string> device_ip: "";
@@ -525,25 +541,25 @@ export component CanvasEditor inherits Window{
                                 Text { text: "旋转:"; width: 40px; }
                                 LineEdit { width: 30px; height: 20px; text <=> active_widget_rotation; input-type: number; edited => { update-widget-position() } }
                             }
-                            if active_widget_type_name != "images" && active_widget_type_name != "webcam" : HorizontalBox {
+                            if active_widget_type_name != "images" && active_widget_type_name != "webcam" && active_widget_type_name != "ring_progress" : HorizontalBox {
                                 padding-top: 5px;
                                 padding-bottom: 0px;
                                 Text { text: "标签:"; width: 40px; }
                                 LineEdit { height: 20px; text <=> active_widget_prefix; input-type: text; edited => { update-widget-text() } }
                             }
-                            if active_widget_type_name != "images" && active_widget_type_name != "webcam" : HorizontalBox {
+                            if active_widget_type_name != "images" && active_widget_type_name != "webcam" && active_widget_type_name != "ring_progress" : HorizontalBox {
                                 padding-top: 5px;
                                 padding-bottom: 0px;
                                 Text { text: "文本:"; width: 40px; }
                                 LineEdit { height: 20px; text <=> active_widget_text; input-type: text; edited => { update-widget-text() } }
                             }
-                            if active_widget_type_name != "images" && active_widget_type_name != "webcam" : HorizontalBox {
+                            if active_widget_type_name != "images" && active_widget_type_name != "webcam" && active_widget_type_name != "ring_progress" : HorizontalBox {
                                 padding-top: 5px;
                                 padding-bottom: 0px;
                                 Text { text: "字号:"; width: 40px; }
                                 LineEdit { width: 60px; height: 20px; text <=> active_widget_font_size; input-type: text; edited => { update-widget-text() } }
                             }
-                            if active_widget_type_name != "images" && active_widget_type_name != "webcam" : HorizontalBox {
+                            if active_widget_type_name != "images" && active_widget_type_name != "webcam" && active_widget_type_name != "ring_progress" : HorizontalBox {
                                 padding-top: 5px;
                                 padding-bottom: 0px;
                                 Text { text: "颜色:"; width: 40px; }
@@ -566,7 +582,7 @@ export component CanvasEditor inherits Window{
                                 }
                             }
                             //文本设置宽度和高度、对齐方式
-                            if active_widget_type_name != "images" && active_widget_type_name != "webcam" : HorizontalBox {
+                            if active_widget_type_name != "images" && active_widget_type_name != "webcam" && active_widget_type_name != "ring_progress" : HorizontalBox {
                                 padding-top: 5px;
                                 padding-bottom: 0px;
                                 Text { text: "宽度:"; width: 40px; }
@@ -574,7 +590,7 @@ export component CanvasEditor inherits Window{
                                 Text { text: "高度:"; width: 40px; }
                                 LineEdit { width: 50px; height: 20px; text <=> active_widget_prop_height; input-type: text; edited => { update_widget_prop_size() } }
                             }
-                            if active_widget_type_name != "images" && active_widget_type_name != "webcam" : HorizontalBox {
+                            if active_widget_type_name != "images" && active_widget_type_name != "webcam" && active_widget_type_name != "ring_progress" : HorizontalBox {
                                 padding-top: 5px;
                                 padding-bottom: 0px;
                                 Text { text: "对齐方式:"; width: 60px; }
@@ -710,6 +726,100 @@ export component CanvasEditor inherits Window{
                                         active_widget_tag1 = self.current-index;
                                         update-widget-tags()
                                     }
+                                }
+                            }
+                            // 环形进度条配置
+                            if active_widget_type_name == "ring_progress" : HorizontalBox {
+                                padding-top: 5px;
+                                padding-bottom: 0px;
+                                Text { text: "数据源:"; width: 50px; }
+                                ComboBox {
+                                    width: 120px;
+                                    height: self.preferred-height*1.5;
+                                    model: ["cpu_usage", "memory_percent", "swap_percent", "gpu_load", "gpu_memory_load", "cpu_temp.", "gpu_temp.", "disk_usage"];
+                                    current-value: active_progress_data_source;
+                                    selected => {
+                                        active_progress_data_source = self.current-value;
+                                        update-progress-config();
+                                    }
+                                }
+                            }
+                            if active_widget_type_name == "ring_progress" : HorizontalBox {
+                                padding-top: 5px;
+                                padding-bottom: 0px;
+                                Text { text: "前景色:"; width: 50px; }
+                                LineEdit { width: 70px; height: 20px; text <=> active_progress_fg_color; edited => { update-progress-fg-color() } }
+                                Rectangle { width: 5px; }
+                                fg-color-rect := Rectangle {
+                                    background: active_progress_fg_color_display;
+                                    border-color: fg-color-touch.pressed?#999: fg-color-touch.has-hover?#bbb:#555555;
+                                    border-width: 1px;
+                                    border-radius: 1px;
+                                    height: 18px;
+                                    width: 18px;
+                                    fg-color-touch := TouchArea {
+                                        clicked => {
+                                            progress_color_picker_target = 1;
+                                            color-picker-x = fg-color-rect.absolute-position.x - 310px;
+                                            color-picker-y = fg-color-rect.absolute-position.y - 230px;
+                                            color-picker.show();
+                                        }
+                                    }
+                                }
+                            }
+                            if active_widget_type_name == "ring_progress" : HorizontalBox {
+                                padding-top: 5px;
+                                padding-bottom: 0px;
+                                Text { text: "背景色:"; width: 50px; }
+                                LineEdit { width: 70px; height: 20px; text <=> active_progress_bg_color; edited => { update-progress-bg-color() } }
+                                Rectangle { width: 5px; }
+                                bg-color-rect := Rectangle {
+                                    background: active_progress_bg_color_display;
+                                    border-color: bg-color-touch.pressed?#999: bg-color-touch.has-hover?#bbb:#555555;
+                                    border-width: 1px;
+                                    border-radius: 1px;
+                                    height: 18px;
+                                    width: 18px;
+                                    bg-color-touch := TouchArea {
+                                        clicked => {
+                                            progress_color_picker_target = 2;
+                                            color-picker-x = bg-color-rect.absolute-position.x - 310px;
+                                            color-picker-y = bg-color-rect.absolute-position.y - 230px;
+                                            color-picker.show();
+                                        }
+                                    }
+                                }
+                            }
+                            if active_widget_type_name == "ring_progress" : HorizontalBox {
+                                padding-top: 5px;
+                                padding-bottom: 0px;
+                                Text { text: "半径:"; width: 40px; }
+                                LineEdit { width: 40px; height: 20px; text <=> active_progress_radius; edited => { update-progress-config() } }
+                                Text { text: "线宽:"; width: 40px; }
+                                LineEdit { width: 40px; height: 20px; text <=> active_progress_stroke_width; edited => { update-progress-config() } }
+                            }
+                            if active_widget_type_name == "ring_progress" : HorizontalBox {
+                                padding-top: 5px;
+                                padding-bottom: 0px;
+                                Text { text: "起始角度:"; width: 60px; }
+                                ComboBox {
+                                    width: 80px;
+                                    height: self.preferred-height*1.5;
+                                    model: ["上(0)", "右(90)", "下(180)", "左(270)"];
+                                    current-index: active_progress_start_angle / 90;
+                                    selected => {
+                                        active_progress_start_angle = self.current-index * 90;
+                                        update-progress-config();
+                                    }
+                                }
+                            }
+                            if active_widget_type_name == "ring_progress" : HorizontalBox {
+                                padding-top: 5px;
+                                padding-bottom: 0px;
+                                CheckBox {
+                                    text: "两端圆形";
+                                    checked <=> active_progress_round_cap;
+                                    toggled => { update-progress-config() }
                                 }
                             }
                         }

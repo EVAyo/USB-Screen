@@ -29,7 +29,7 @@ use crate::{
     nmc::CITIES,
     screen::{ScreenRender, ScreenSize, DEFAULT_FONT},
     utils::get_font_name,
-    widgets::{ImageData, ImageWidget, TextWidget, Widget},
+    widgets::{ImageData, ImageWidget, ProgressWidget, ProgressType, TextWidget, Widget},
 };
 
 enum CurrentScreen{
@@ -480,6 +480,13 @@ impl CanvasEditorContext {
             widget.rotation = rotate_str.parse().unwrap_or(widget.rotation);
             app.set_active_widget_rotation(format!("{}", widget.rotation as i32).into());
         }
+
+        // 进度条组件更新尺寸
+        if let Some(widget) = widget.as_any_mut().downcast_mut::<ProgressWidget>() {
+            widget.width = nw;
+            widget.height = nh;
+            widget.position.set_size(nw, nh);
+        }
     }
 
     fn on_update_widget_text(&mut self) {
@@ -673,6 +680,50 @@ impl CanvasEditorContext {
         }
     }
 
+    /// 更新进度条配置
+    fn on_update_progress_config(&mut self) {
+        let app = self.app.unwrap();
+        if let Some(widget) = self
+            .active_widget()
+            .and_then(|w| w.as_any_mut().downcast_mut::<ProgressWidget>())
+        {
+            // 更新数据源
+            widget.type_name = app.get_active_progress_data_source().to_string();
+
+            // 更新前景色
+            let fg_str = app.get_active_progress_fg_color().to_string();
+            if let Ok(c) = HexColor::parse(&fg_str) {
+                widget.foreground_color = [c.r, c.g, c.b, 255];
+            }
+
+            // 更新背景色
+            let bg_str = app.get_active_progress_bg_color().to_string();
+            if let Ok(c) = HexColor::parse(&bg_str) {
+                widget.background_color = [c.r, c.g, c.b, 255];
+            }
+
+            // 更新半径
+            if let Ok(r) = app.get_active_progress_radius().parse::<i32>() {
+                widget.radius = r.max(5);  // 最小半径5
+                // 同步更新尺寸
+                widget.width = widget.radius * 2;
+                widget.height = widget.radius * 2;
+                widget.position.set_width_and_height(widget.width, widget.height);
+            }
+
+            // 更新线宽
+            if let Ok(w) = app.get_active_progress_stroke_width().parse::<f32>() {
+                widget.stroke_width = w;
+            }
+
+            // 更新起始角度和圆角
+            widget.start_angle = app.get_active_progress_start_angle();
+            widget.round_cap = app.get_active_progress_round_cap();
+
+            let _ = self.screen.setup_monitor();
+        }
+    }
+
     fn on_update_widget_tags(&mut self) {
         let app = self.app.unwrap();
         let tag1 = app.get_active_widget_tag1();
@@ -808,6 +859,36 @@ impl CanvasEditorContext {
             app.set_active_widget_x(format!("{}", widget.position().left).into());
             app.set_active_widget_y(format!("{}", widget.position().top).into());
         }
+
+        // 进度条组件
+        if let Some(widget) = self
+            .active_widget()
+            .and_then(|w| w.as_any_mut().downcast_mut::<ProgressWidget>())
+        {
+            app.set_active_widget_type_name("ring_progress".into());
+            app.set_active_widget_uuid(SharedString::from(&widget.id));
+            app.set_active_widget_x(format!("{}", widget.position.center().0).into());
+            app.set_active_widget_y(format!("{}", widget.position.center().1).into());
+            app.set_active_widget_width(format!("{}", widget.width).into());
+            app.set_active_widget_height(format!("{}", widget.height).into());
+
+            // 设置进度条专属属性
+            let fg = widget.foreground_color;
+            app.set_active_progress_fg_color(format!("#{:02X}{:02X}{:02X}", fg[0], fg[1], fg[2]).into());
+            app.set_active_progress_fg_color_display(Color::from_rgb_u8(fg[0], fg[1], fg[2]));
+            let bg = widget.background_color;
+            app.set_active_progress_bg_color(format!("#{:02X}{:02X}{:02X}", bg[0], bg[1], bg[2]).into());
+            app.set_active_progress_bg_color_display(Color::from_rgb_u8(bg[0], bg[1], bg[2]));
+            app.set_active_progress_radius(format!("{}", widget.radius).into());
+            app.set_active_progress_stroke_width(format!("{}", widget.stroke_width as i32).into());
+            app.set_active_progress_start_angle(widget.start_angle);
+            app.set_active_progress_round_cap(widget.round_cap);
+            app.set_active_progress_data_source(widget.type_name.as_str().into());
+            // 重置颜色选择器目标
+            app.set_progress_color_picker_target(0);
+            return;
+        }
+
         self.update_widget_edit_text();
 
         if let Some(id) = self.active_id.as_ref() {
@@ -1119,12 +1200,16 @@ impl CanvasEditorContext {
 
         let mut text_widget_clone = None;
         let mut image_widget_clone = None;
+        let mut progress_widget_clone = None;
 
         if let Some(ref_text_widget) = self.screen.widgets[widget_index].as_any_mut().downcast_mut::<TextWidget>() {
             text_widget_clone = Some(ref_text_widget.clone());
         }
         if let Some(ref_image_widget) = self.screen.widgets[widget_index].as_any_mut().downcast_mut::<ImageWidget>() {
             image_widget_clone = Some(ref_image_widget.clone());
+        }
+        if let Some(ref_progress_widget) = self.screen.widgets[widget_index].as_any_mut().downcast_mut::<ProgressWidget>() {
+            progress_widget_clone = Some(ref_progress_widget.clone());
         }
 
         if let Some((idx, w)) = self.screen.find_widget(&uuid) {
@@ -1140,6 +1225,10 @@ impl CanvasEditorContext {
             if let Some(image_widget) = w.as_any_mut().downcast_mut::<ImageWidget>() {
                 *image_widget = image_widget_clone.unwrap();
                 image_widget.id = uuid.clone();
+            }
+            if let Some(progress_widget) = w.as_any_mut().downcast_mut::<ProgressWidget>() {
+                *progress_widget = progress_widget_clone.unwrap();
+                progress_widget.id = uuid.clone();
             }
 
             w.position_mut().offset(5, 5);
@@ -1198,6 +1287,26 @@ impl CanvasEditorContext {
             }
             app.set_active_widget_width(format!("{}", widget.position.width()).into());
             app.set_active_widget_height(format!("{}", widget.position.height()).into());
+        }
+        // 环形进度条滚轮调整半径
+        if let Some(widget) = self
+            .active_widget()
+            .and_then(|w| w.as_any_mut().downcast_mut::<ProgressWidget>())
+        {
+            if widget.progress_type == ProgressType::Ring {
+                if dy > 0. {
+                    widget.radius += 2;
+                } else {
+                    widget.radius = (widget.radius - 2).max(5);
+                }
+                // 同步更新尺寸
+                widget.width = widget.radius * 2;
+                widget.height = widget.radius * 2;
+                widget.position.set_width_and_height(widget.width, widget.height);
+                app.set_active_progress_radius(format!("{}", widget.radius).into());
+                app.set_active_widget_width(format!("{}", widget.width).into());
+                app.set_active_widget_height(format!("{}", widget.height).into());
+            }
         }
     }
 
@@ -1539,6 +1648,19 @@ impl CanvasEditorContext {
             );
         }
         let pixel = self.picker_img.get_pixel(x as u32, y as u32).clone();
+        let app = self.app.unwrap();
+
+        // 检查是否是进度条颜色选择
+        let picker_target = app.get_progress_color_picker_target();
+        if picker_target == 1 {
+            // 前景色
+            self.update_progress_fg_color_rgb(pixel[0], pixel[1], pixel[2]);
+            return Brush::SolidColor(Color::from_rgb_u8(pixel[0], pixel[1], pixel[2]));
+        } else if picker_target == 2 {
+            // 背景色
+            self.update_progress_bg_color_rgb(pixel[0], pixel[1], pixel[2]);
+            return Brush::SolidColor(Color::from_rgb_u8(pixel[0], pixel[1], pixel[2]));
+        }
 
         let type_name = self
             .active_widget()
@@ -1566,6 +1688,16 @@ impl CanvasEditorContext {
         let r = ((color.color().red() as f32 / 255.0) * brightness_factor * 255.0) as u8;
         let g = ((color.color().green() as f32 / 255.0) * brightness_factor * 255.0) as u8;
         let b = ((color.color().blue() as f32 / 255.0) * brightness_factor * 255.0) as u8;
+
+        // 检查是否是进度条颜色选择
+        let picker_target = app.get_progress_color_picker_target();
+        if picker_target == 1 {
+            self.update_progress_fg_color_rgb(r, g, b);
+            return;
+        } else if picker_target == 2 {
+            self.update_progress_bg_color_rgb(r, g, b);
+            return;
+        }
 
         let type_name = self
             .active_widget()
@@ -1611,6 +1743,52 @@ impl CanvasEditorContext {
             ));
         } else {
             app.set_active_widget_image_color_str(SharedString::from(""));
+        }
+    }
+
+    // 更新进度条前景色
+    fn update_progress_fg_color_rgb(&mut self, r: u8, g: u8, b: u8) {
+        let app = self.app.unwrap();
+        if let Some(widget) = self
+            .active_widget()
+            .and_then(|w| w.as_any_mut().downcast_mut::<ProgressWidget>())
+        {
+            widget.foreground_color = [r, g, b, 255];
+        }
+        let color_str = format!("#{:02X}{:02X}{:02X}", r, g, b);
+        app.set_active_progress_fg_color(color_str.into());
+        app.set_active_progress_fg_color_display(Color::from_rgb_u8(r, g, b));
+    }
+
+    // 更新进度条背景色
+    fn update_progress_bg_color_rgb(&mut self, r: u8, g: u8, b: u8) {
+        let app = self.app.unwrap();
+        if let Some(widget) = self
+            .active_widget()
+            .and_then(|w| w.as_any_mut().downcast_mut::<ProgressWidget>())
+        {
+            widget.background_color = [r, g, b, 255];
+        }
+        let color_str = format!("#{:02X}{:02X}{:02X}", r, g, b);
+        app.set_active_progress_bg_color(color_str.into());
+        app.set_active_progress_bg_color_display(Color::from_rgb_u8(r, g, b));
+    }
+
+    // 从文本框更新进度条前景色
+    fn on_update_progress_fg_color(&mut self) {
+        let app = self.app.unwrap();
+        let color_str = app.get_active_progress_fg_color().to_string();
+        if let Ok(c) = HexColor::parse(&color_str) {
+            self.update_progress_fg_color_rgb(c.r, c.g, c.b);
+        }
+    }
+
+    // 从文本框更新进度条背景色
+    fn on_update_progress_bg_color(&mut self) {
+        let app = self.app.unwrap();
+        let color_str = app.get_active_progress_bg_color().to_string();
+        if let Ok(c) = HexColor::parse(&color_str) {
+            self.update_progress_bg_color_rgb(c.r, c.g, c.b);
         }
     }
 
@@ -1942,6 +2120,27 @@ pub fn run() -> Result<()> {
     app.on_update_widget_alignment(move || {
         if let Ok(mut context) = context_clone.try_borrow_mut(){
             context.on_update_widget_prop_alignment();
+        }
+    });
+
+    let context_clone = context.clone();
+    app.on_update_progress_config(move || {
+        if let Ok(mut context) = context_clone.try_borrow_mut(){
+            context.on_update_progress_config();
+        }
+    });
+
+    let context_clone = context.clone();
+    app.on_update_progress_fg_color(move || {
+        if let Ok(mut context) = context_clone.try_borrow_mut(){
+            context.on_update_progress_fg_color();
+        }
+    });
+
+    let context_clone = context.clone();
+    app.on_update_progress_bg_color(move || {
+        if let Ok(mut context) = context_clone.try_borrow_mut(){
+            context.on_update_progress_bg_color();
         }
     });
 
