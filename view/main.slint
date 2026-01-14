@@ -220,48 +220,41 @@ export component CanvasEditor inherits Window{
         Rectangle {
             width: 120px;
             background: #2d2e31;
-            VerticalLayout {
-                // Text {
-                //     vertical-alignment: center;
-                //     height: 24px;
-                //     text: "组件类型";
-                // }
-                ListView {
-                    for data[widget-idx] in widgets: 
-                    Rectangle {
-                        opacity: widget_type_index == widget-idx? 1 : 0.8;
-                        border-radius: 5px;
-                        // background: widget_type_index == widget-idx? rgba(255, 255, 255, 0.13) :
-                        //      (touch.has-hover? rgba(255, 255, 255, 0.07):transparent );
-                        touch := TouchArea {
-                            clicked => {
-                                widget_type_index = widget-idx;
-                                widget_type_name = widgets[widget-idx].name;
-                                widget_type_label = widgets[widget-idx].text;
+            Flickable {
+                viewport-height: widgets.length * 36px;
+                for data[widget-idx] in widgets: 
+                Rectangle {
+                    y: widget-idx * 36px;
+                    width: 100%;
+                    height: 36px;
+                    background: widget_type_index == widget-idx ? #1a73e8 : transparent;
+                    border-radius: 5px;
+                    touch := TouchArea {
+                        clicked => {
+                            widget_type_index = widget-idx;
+                            widget_type_name = widgets[widget-idx].name;
+                            widget_type_label = widgets[widget-idx].text;
+                        }
+                    }
+                
+                    HorizontalLayout {
+                        padding: 8px;
+                        VerticalLayout {
+                            height: 100%;
+                            alignment: center;
+                            Image {
+                                width: 16px;
+                                height: 16px;
+                                image-fit: contain;
+                                source: data.icon;
                             }
                         }
-                    
-                        HorizontalLayout {
-                            padding: 8px;
-                            VerticalLayout {
-                                height: 100%;
-                                alignment: center;
-                                Image {
-                                    width: widget_type_index == widget-idx? 18px : 15px;
-                                    height: widget_type_index == widget-idx? 18px : 15px;
-                                    image-fit: contain;
-                                    source: data.icon;
-                                }
-                            }
-                            VerticalLayout {
-                                padding-top: -2px;
-                                Text {
-                                    font-weight: widget_type_index == widget-idx? 8000 : 300;
-                                    font-size: widget_type_index == widget-idx? 14px : 13px;
-                                    vertical-alignment: center;
-                                    text: (widget_type_index == widget-idx?" ":"  ")+data.text;
-                                    color: widget_type_index == widget-idx? #22b5fe : white;
-                                }
+                        VerticalLayout {
+                            Text {
+                                font-size: 13px;
+                                vertical-alignment: center;
+                                text: " " + data.text;
+                                color: widget_type_index == widget-idx ? white : #cccccc;
                             }
                         }
                     }
