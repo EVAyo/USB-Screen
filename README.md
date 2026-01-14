@@ -145,26 +145,23 @@ ESP32 屏幕的固件烧录、WiFi配置、屏幕参数设置等详细说明，�
 
 # 编译
 
-所有编译脚本都使用 `cargo zbuild` 进行交叉编译，自动指定 features，**无需手动修改 Cargo.toml**。
-
-## 前置要求
-
-1. 安装 Rust: https://rustup.rs
-2. 安装 cargo-zbuild: `cargo install cargo-zbuild`
-3. 安装 Docker Desktop (交叉编译需要)
-
 ## 编译脚本一览
 
 | 脚本 | 目标平台 | Features | 说明 |
 |------|----------|----------|------|
 | `build-x86_64_windows.cmd` | Windows x64 | editor, tray, nokhwa-webcam, usb-serial | Windows 桌面版 |
-| `build-x86_64_linux.cmd` | x86_64 Linux (gnu) | editor, v4l-webcam, usb-serial | Linux 桌面版 (默认带 editor) |
-| `build-x86_64_linux.cmd no-editor` | x86_64 Linux (gnu) | v4l-webcam, usb-serial | Linux 无桌面版 |
-| `build-x86_64_linux_musl.cmd` | x86_64 Linux (musl) | usb-serial | 静态链接版本，兼容性好 |
-| `build-aarch64-musl.cmd` | OpenWrt ARM64 | v4l-webcam, usb-serial | 路由器/嵌入式设备 |
+| `build-x86_64_linux_musl.sh` | x86_64 Linux (musl) | usb-serial | 静态链接版本 (WSL) |
+| `build-aarch64-musl.sh` | ARM64 Linux (musl) | v4l-webcam, usb-serial | ARM64设备 (WSL) |
+| `build-aarch64-musl.cmd` | ARM64 Linux (musl) | v4l-webcam, usb-serial | ARM64设备 (Docker) |
+
+---
 
 ## Windows 编译
 
+### 前置要求
+1. 安装 Rust: https://rustup.rs
+
+### 编译命令
 ```cmd
 :: 需要以管理员身份运行 (读取硬件信息)
 .\build-x86_64_windows.cmd
@@ -172,46 +169,126 @@ ESP32 屏幕的固件烧录、WiFi配置、屏幕参数设置等详细说明，�
 
 输出文件: `target/x86_64-pc-windows-msvc/release/USB-Screen.exe`
 
-## x86_64 Linux 编译 (带 editor)
+---
 
-```cmd
-:: 需要启动 Docker Desktop
-.\build-x86_64_linux.cmd
+## Linux 编译 (WSL 方式，推荐)
+
+在 Windows 的 WSL 子系统中编译 Linux 版本，无需 Docker，完全静态链接。
+
+### 前置要求 - 安装 WSL 工具链
+
+```bash
+# 进入 WSL
+wsl
+
+# 更新包管理器
+sudo apt update
+
+# 安装基础编译工具
+sudo apt install -y build-essential pkg-config
+
+# 安装 musl 工具 (x86_64 静态链接需要)
+sudo apt install -y musl-tools
+
+# 安装 libclang (v4l-webcam 编译需要)
+sudo apt install -y libclang-dev
+
+# 安装 Rust (如果还没安装)
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source ~/.cargo/env
 ```
 
-输出文件: `target/x86_64-unknown-linux-gnu/release/USB-Screen`
+### x86_64 Linux (musl) 编译
 
-## x86_64 Linux 编译 (无 editor)
+适用于飞牛 fnOS、群晖等 NAS 系统，完全静态链接，兼容性最好。
 
-```cmd
-:: 需要启动 Docker Desktop
-.\build-x86_64_linux.cmd no-editor
+```bash
+# 进入 WSL
+wsl
+
+# 进入项目目录
+cd /mnt/c/Users/你的用户名/Documents/GitHub/USB-Screen
+
+# 添加执行权限 (首次)
+chmod +x build-x86_64_linux_musl.sh
+
+# 编译
+./build-x86_64_linux_musl.sh
+
+# 编译带 editor 版本 (可选)
+./build-x86_64_linux_musl.sh editor
 ```
 
-## OpenWrt ARM64 (aarch64) 编译
+输出文件: `~/.cargo-target/USB-Screen/x86_64-unknown-linux-musl/release/USB-Screen`
 
-```cmd
-:: 需要启动 Docker Desktop
-.\build-aarch64-musl.cmd
+### ARM64 Linux (musl) 编译
+
+适用于树莓派、OpenWrt 路由器等 ARM64 设备。
+
+#### 额外前置要求 - 安装 aarch64 musl 交叉编译工具链
+
+**注意**: 必须使用 musl 工具链，apt 安装的 `gcc-aarch64-linux-gnu` 是 glibc 版本，会导致链接错误!
+
+```bash
+# 下载 aarch64 musl 交叉编译器 (约100MB)
+wget https://musl.cc/aarch64-linux-musl-cross.tgz
+
+# 解压到 /opt
+sudo tar -xzf aarch64-linux-musl-cross.tgz -C /opt/
+
+# 添加到 PATH (永久生效)
+echo 'export PATH="/opt/aarch64-linux-musl-cross/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+
+# 验证安装
+aarch64-linux-musl-gcc --version
 ```
 
-输出文件: `target/aarch64-unknown-linux-musl/release/USB-Screen`
+#### 编译命令
 
-## 飞牛私有云 fnOS 编译
+```bash
+# 添加执行权限 (首次)
+chmod +x build-aarch64-musl.sh
 
-飞牛 fnOS 推荐使用 musl 静态链接版本，兼容性更好：
-
-```cmd
-:: 需要启动 Docker Desktop
-.\build-x86_64_linux_musl.cmd
+# 编译
+./build-aarch64-musl.sh
 ```
 
-输出文件: `target/x86_64-unknown-linux-musl/release/USB-Screen`
+输出文件: `~/.cargo-target/USB-Screen/aarch64-unknown-linux-musl/release/USB-Screen`
 
-如果需要 v4l 摄像头功能，使用 gnu 版本：
+---
 
-```cmd
-.\build-x86_64_linux.cmd no-editor
+## 飞牛私有云 fnOS 部署
+
+飞牛 fnOS 推荐使用 WSL 编译的 musl 静态链接版本：
+
+### 1. 编译
+
+```bash
+wsl
+cd /mnt/c/Users/你的用户名/Documents/GitHub/USB-Screen
+./build-x86_64_linux_musl.sh
+```
+
+### 2. 上传到 fnOS
+
+```bash
+# 复制编译结果和配置文件
+scp ~/.cargo-target/USB-Screen/x86_64-unknown-linux-musl/release/USB-Screen 用户名@fnos地址:/tmp/
+scp 320x240_1fps.screen 用户名@fnos地址:/tmp/
+
+# SSH 登录后移动到目标目录
+ssh 用户名@fnos地址
+sudo mv /tmp/USB-Screen /home/你的用户名/
+sudo mv /tmp/320x240_1fps.screen /home/你的用户名/
+```
+
+### 3. 运行
+
+```bash
+cd ~
+chmod +x USB-Screen
+./USB-Screen 320x240_1fps.screen
 ```
 
 # 运行编辑器

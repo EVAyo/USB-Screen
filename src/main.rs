@@ -30,6 +30,46 @@ fn main() -> Result<()> {
         .filter_level(log::LevelFilter::Info)
         .try_init();
 
+    // 打印启动信息
+    eprintln!("========================================");
+    eprintln!("USB-Screen 启动");
+    eprintln!("========================================");
+    
+    // 打印当前可执行文件路径
+    match std::env::current_exe() {
+        Ok(exe) => eprintln!("可执行文件: {:?}", exe),
+        Err(e) => eprintln!("获取可执行文件路径失败: {}", e),
+    }
+    
+    // 打印当前工作目录
+    match std::env::current_dir() {
+        Ok(cwd) => eprintln!("当前工作目录: {:?}", cwd),
+        Err(e) => eprintln!("获取工作目录失败: {}", e),
+    }
+    
+    // 打印编译features
+    eprintln!("编译features:");
+    #[cfg(feature = "editor")]
+    eprintln!("  - editor: 启用");
+    #[cfg(not(feature = "editor"))]
+    eprintln!("  - editor: 未启用");
+    #[cfg(feature = "usb-serial")]
+    eprintln!("  - usb-serial: 启用");
+    #[cfg(not(feature = "usb-serial"))]
+    eprintln!("  - usb-serial: 未启用");
+    #[cfg(feature = "tray")]
+    eprintln!("  - tray: 启用");
+    #[cfg(not(feature = "tray"))]
+    eprintln!("  - tray: 未启用");
+    #[cfg(feature = "v4l-webcam")]
+    eprintln!("  - v4l-webcam: 启用");
+    #[cfg(not(feature = "v4l-webcam"))]
+    eprintln!("  - v4l-webcam: 未启用");
+    
+    // 打印系统信息
+    eprintln!("目标平台: {}", std::env::consts::OS);
+    eprintln!("目标架构: {}", std::env::consts::ARCH);
+
     #[cfg(windows)]
     {
         #[cfg(not(debug_assertions))]
@@ -40,6 +80,7 @@ fn main() -> Result<()> {
     }
 
     let args: Vec<String> = std::env::args().skip(1).collect();
+    eprintln!("命令行参数: {:?}", args);
 
     let screen_file = match args.len() {
         0 => read_screen_file(),
@@ -48,6 +89,13 @@ fn main() -> Result<()> {
     };
 
     info!("screen_file={:?}", screen_file);
+
+    if screen_file.is_none() {
+        eprintln!("错误: 未找到 .screen 文件!");
+        eprintln!("用法: USB-Screen <screen文件路径>");
+        eprintln!("      或在当前目录放置 .screen 文件");
+        return Ok(());
+    }
 
     if let Some(file) = screen_file {
         #[cfg(feature = "editor")]
@@ -70,22 +118,72 @@ fn main() -> Result<()> {
 }
 
 fn open_usb_screen(file: String) -> Result<()>{
+    eprintln!("----------------------------------------");
+    eprintln!("正在打开屏幕文件: {}", file);
     info!("打开屏幕文件:{file}");
-    let f = std::fs::read(file)?;
-    let mut render = ScreenRender::new_from_file(&f)?;
+    
+    // 检查文件是否存在
+    let file_path = Path::new(&file);
+    if !file_path.exists() {
+        eprintln!("错误: 文件不存在: {}", file);
+        return Err(anyhow!("文件不存在: {}", file));
+    }
+    
+    // 读取文件
+    let f = match std::fs::read(&file) {
+        Ok(data) => {
+            eprintln!("文件读取成功, 大小: {} 字节", data.len());
+            data
+        }
+        Err(e) => {
+            eprintln!("错误: 读取文件失败: {}", e);
+            return Err(e.into());
+        }
+    };
+    
+    // 解析screen文件
+    let mut render = match ScreenRender::new_from_file(&f) {
+        Ok(r) => {
+            eprintln!("screen文件解析成功");
+            eprintln!("  屏幕尺寸: {}x{}", r.width, r.height);
+            eprintln!("  帧率: {} fps", r.fps);
+            eprintln!("  旋转角度: {} 度", r.rotate_degree);
+            if let Some(ip) = &r.device_ip {
+                eprintln!("  设备IP: {}", ip);
+            }
+            r
+        }
+        Err(e) => {
+            eprintln!("错误: 解析screen文件失败: {}", e);
+            return Err(e);
+        }
+    };
 
-    render.setup_monitor()?;
+    // 设置监控
+    if let Err(e) = render.setup_monitor() {
+        eprintln!("警告: 设置监控失败: {}", e);
+    } else {
+        eprintln!("监控设置成功");
+    }
     
     let mut usb_screen = None;
 
-    if let Some(_ip) = render.device_ip.as_ref(){
+    if let Some(ip) = render.device_ip.as_ref(){
+        eprintln!("使用WiFi屏幕模式, IP: {}", ip);
         info!("设置了ip地址，使用wifi屏幕..");
     }else {
+        eprintln!("使用USB屏幕模式, 正在查找USB设备...");
         info!("未设置ip地址，使用 USB屏幕...");
         usb_screen = usb_screen::find_and_open_a_screen();
+        if usb_screen.is_some() {
+            eprintln!("USB屏幕设备已找到并打开");
+        } else {
+            eprintln!("警告: 未找到USB屏幕设备, 将在主循环中重试");
+        }
     }
 
     info!("USB Screen是否已打开: {}", usb_screen.is_some());
+    eprintln!("进入主循环...");
     let mut last_draw_time = Instant::now();
     let frame_duration = (1000./render.fps) as u128;
     info!("帧时间:{}ms", frame_duration);
@@ -150,10 +248,17 @@ fn open_usb_screen(file: String) -> Result<()>{
 
 #[allow(unreachable_code)]
 fn create_tray_icon(file: String) -> Result<()> {
+    eprintln!("========================================");
+    eprintln!("create_tray_icon 被调用, 文件: {}", file);
 
     #[cfg(not(feature = "editor"))]
     {
+        eprintln!("无editor模式, 直接运行屏幕显示...");
         let ret = open_usb_screen(file);
+        match &ret {
+            Ok(_) => eprintln!("open_usb_screen 正常退出"),
+            Err(e) => eprintln!("open_usb_screen 错误退出: {}", e),
+        }
         error!("{:?}", ret);
         return Ok(());
     }
@@ -236,23 +341,33 @@ fn read_screen_file() -> Option<String> {
     // {
     //     return None;
     // }
-    //在当前目录下查找.screen文件
-    let path = Path::new("./"); // 这里以当前目录为例，你可以替换为任何你想要列出的目录路径
-                                // 使用read_dir函数读取目录条目
-    if let Ok(entries) = std::fs::read_dir(path) {
-        for entry in entries {
-            if let Ok(entry) = entry {
-                let path = entry.path();
-                if path.is_file() {
-                    if let Some(extension) = path.extension() {
-                        if extension == "screen" {
-                            if let Some(str) = path.to_str() {
-                                return Some(str.to_string());
+    // 在当前目录下查找.screen文件
+    let path = Path::new("./");
+    eprintln!("正在搜索 .screen 文件...");
+    
+    match std::fs::read_dir(path) {
+        Ok(entries) => {
+            let mut file_count = 0;
+            for entry in entries {
+                if let Ok(entry) = entry {
+                    let path = entry.path();
+                    file_count += 1;
+                    if path.is_file() {
+                        if let Some(extension) = path.extension() {
+                            if extension == "screen" {
+                                if let Some(str) = path.to_str() {
+                                    eprintln!("找到 .screen 文件: {}", str);
+                                    return Some(str.to_string());
+                                }
                             }
                         }
                     }
                 }
             }
+            eprintln!("扫描了 {} 个文件/目录, 未找到 .screen 文件", file_count);
+        }
+        Err(e) => {
+            eprintln!("读取目录失败: {}", e);
         }
     }
     None
