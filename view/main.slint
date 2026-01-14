@@ -383,21 +383,6 @@ export component CanvasEditor inherits Window{
                                 accept
                             }
                         }
-                        canvas-touch := TouchArea {
-                            width: (slider.value/( (rotation_deg==90||rotation_deg==270)? 200:100)) * parent.width;
-                            height: self.width * (screen-height/screen-width);
-                            moved => {
-                                mouse-move(canvas-touch.mouse-x/(self.width/screen-width), canvas-touch.mouse-y/(self.width/screen-width), screen-width, screen-height, canvas-touch.pressed)
-                            }
-                            clicked => {
-                                canvas-focus.focus();
-                                mouse-click(canvas-touch.mouse-x/(self.width/screen-width), canvas-touch.mouse-y/(self.width/screen-width), screen-width, screen-height)
-                            }
-                            scroll-event(e) => {
-                                screen_mouse_scroll(e.delta-x, e.delta-y);
-                                accept
-                            }
-                        }
                         Rectangle {
                             background: #181818;
                             width: (slider.value/( (rotation_deg==90||rotation_deg==270)? 200:100)) * parent.width;
@@ -406,6 +391,49 @@ export component CanvasEditor inherits Window{
                             canvas-image := Image {
                                 width: 100%;
                                 height: 100%;
+                            }
+                        }
+                        canvas-touch := TouchArea {
+                            width: (slider.value/( (rotation_deg==90||rotation_deg==270)? 200:100)) * parent.width;
+                            height: self.width * (screen-height/screen-width);
+                            // 选中指针时使用默认鼠标，选中其他组件时使用十字准星提示放置模式
+                            mouse-cursor: widget_type_index == 0 ? default : crosshair;
+                            moved => {
+                                mouse-move(self.mouse-x/(self.width/screen-width), self.mouse-y/(self.width/screen-width), screen-width, screen-height, self.pressed)
+                            }
+                            clicked => {
+                                canvas-focus.focus();
+                                mouse-click(self.mouse-x/(self.width/screen-width), self.mouse-y/(self.width/screen-width), screen-width, screen-height)
+                            }
+                            scroll-event(e) => {
+                                screen_mouse_scroll(e.delta-x, e.delta-y);
+                                accept
+                            }
+                            // 跟随鼠标的放置提示图标
+                            if widget_type_index != 0 && canvas-touch.has-hover : Rectangle {
+                                x: canvas-touch.mouse-x + 8px;
+                                y: canvas-touch.mouse-y + 8px;
+                                width: tip-layout.preferred-width;
+                                height: 24px;
+                                background: #1a73e8;
+                                border-radius: 5px;
+                                tip-layout := HorizontalLayout {
+                                    padding-left: 5px;
+                                    padding-right: 8px;
+                                    spacing: 4px;
+                                    Image {
+                                        width: 16px;
+                                        height: 16px;
+                                        source: widgets[widget_type_index].icon;
+                                        colorize: white;
+                                    }
+                                    Text {
+                                        text: "点击添加组件";
+                                        color: white;
+                                        font-size: 11px;
+                                        vertical-alignment: center;
+                                    }
+                                }
                             }
                         }
                     }
