@@ -1,8 +1,8 @@
-use std::{net::{Ipv4Addr, TcpStream}, sync::Mutex, time::{Duration, Instant}};
+use std::{net::TcpStream, sync::Mutex, time::{Duration, Instant}};
 
 use crossbeam_channel::{bounded, Receiver, Sender};
 use fast_image_resize::{images::Image, Resizer};
-use image::{buffer::ConvertBuffer, imageops::overlay, RgbImage, RgbaImage};
+use image::{buffer::ConvertBuffer, RgbImage, RgbaImage};
 use log::info;
 use once_cell::sync::Lazy;
 use anyhow::{anyhow, Result};
@@ -10,6 +10,113 @@ use serde::{Deserialize, Serialize};
 use tungstenite::{connect, stream::MaybeTlsStream, WebSocket};
 
 use crate::rgb565::rgb888_to_rgb565_be;
+
+// WiFi帧差分协议 Magic Numbers (8字节)
+// 格式: MAGIC(8) + WIDTH(2) + HEIGHT(2) + LZ4_COMPRESSED_DATA
+const WIFI_KEY_MAGIC: &[u8; 8] = b"wflz4ke_"; // lz4压缩的关键帧(完整RGB565)
+const WIFI_DLT_MAGIC: &[u8; 8] = b"wflz4dl_"; // lz4压缩的差分帧(XOR差分数据)
+const WIFI_NOP_MAGIC: &[u8; 8] = b"wflz4no_"; // 无变化帧(屏幕静止，跳过绘制)
+
+// 无变化帧阈值：压缩后小于此大小认为画面没变化
+const NO_CHANGE_THRESHOLD: usize = 200;
+
+// WiFi帧差分编码器
+struct DeltaEncoder {
+    prev_frame: Vec<u8>,       // 上一帧RGB565数据
+    frame_count: u32,          // 帧计数
+    key_frame_interval: u32,   // 关键帧间隔(默认60帧)
+}
+
+impl DeltaEncoder {
+    fn new(key_frame_interval: u32) -> Self {
+        Self {
+            prev_frame: Vec::new(),
+            frame_count: 0,
+            key_frame_interval,
+        }
+    }
+
+    // 编码一帧RGB565数据
+    // 返回: (编码后的数据, 帧类型描述)
+    fn encode(&mut self, rgb565_data: &[u8], width: u16, height: u16) -> (Vec<u8>, &'static str) {
+        let need_key_frame = self.prev_frame.len() != rgb565_data.len()
+            || self.frame_count == 0
+            || self.frame_count % self.key_frame_interval == 0;
+
+        if need_key_frame {
+            // 关键帧: 直接压缩完整数据
+            let compressed = lz4_flex::compress_prepend_size(rgb565_data);
+            
+            // 构建帧数据: MAGIC + WIDTH + HEIGHT + COMPRESSED_DATA
+            let mut frame = Vec::with_capacity(12 + compressed.len());
+            frame.extend_from_slice(WIFI_KEY_MAGIC);
+            frame.extend_from_slice(&width.to_be_bytes());
+            frame.extend_from_slice(&height.to_be_bytes());
+            frame.extend_from_slice(&compressed);
+            
+            // 保存当前帧作为参考帧
+            self.prev_frame = rgb565_data.to_vec();
+            self.frame_count = self.frame_count.wrapping_add(1);
+            
+            (frame, "KEY")
+        } else {
+            // 差分帧: 计算XOR差分并压缩
+            let delta: Vec<u8> = rgb565_data.iter()
+                .zip(self.prev_frame.iter())
+                .map(|(curr, prev)| curr ^ prev)
+                .collect();
+            
+            let compressed_delta = lz4_flex::compress_prepend_size(&delta);
+            
+            // 如果压缩后数据很小，说明画面几乎没变化，发送无变化帧
+            if compressed_delta.len() < NO_CHANGE_THRESHOLD {
+                let mut frame = Vec::with_capacity(12);
+                frame.extend_from_slice(WIFI_NOP_MAGIC);
+                frame.extend_from_slice(&width.to_be_bytes());
+                frame.extend_from_slice(&height.to_be_bytes());
+                
+                self.frame_count = self.frame_count.wrapping_add(1);
+                
+                (frame, "NOP")
+            } else {
+                let compressed_key = lz4_flex::compress_prepend_size(rgb565_data);
+                
+                // 如果差分帧比关键帧还大，使用关键帧
+                if compressed_delta.len() >= compressed_key.len() {
+                    let mut frame = Vec::with_capacity(12 + compressed_key.len());
+                    frame.extend_from_slice(WIFI_KEY_MAGIC);
+                    frame.extend_from_slice(&width.to_be_bytes());
+                    frame.extend_from_slice(&height.to_be_bytes());
+                    frame.extend_from_slice(&compressed_key);
+                    
+                    self.prev_frame = rgb565_data.to_vec();
+                    self.frame_count = self.frame_count.wrapping_add(1);
+                    
+                    (frame, "KEY")
+                } else {
+                    // 使用差分帧
+                    let mut frame = Vec::with_capacity(12 + compressed_delta.len());
+                    frame.extend_from_slice(WIFI_DLT_MAGIC);
+                    frame.extend_from_slice(&width.to_be_bytes());
+                    frame.extend_from_slice(&height.to_be_bytes());
+                    frame.extend_from_slice(&compressed_delta);
+                    
+                    // 更新参考帧
+                    self.prev_frame = rgb565_data.to_vec();
+                    self.frame_count = self.frame_count.wrapping_add(1);
+                    
+                    (frame, "DLT")
+                }
+            }
+        }
+    }
+
+    // 重置编码器状态
+    fn reset(&mut self) {
+        self.prev_frame.clear();
+        self.frame_count = 0;
+    }
+}
 
 #[derive(Serialize, Deserialize, Debug)]
 struct DisplayConfig{
@@ -60,7 +167,7 @@ static CONFIG: Lazy<Mutex<(StatusInfo, Sender<Message>)>> = Lazy::new(|| {
     Mutex::new((StatusInfo{
         ip: None,
         status: Status::NotConnected,
-        delay_ms: 150,
+        delay_ms: 1,
     }, sender))
 });
 
@@ -100,7 +207,6 @@ pub fn get_status() -> Result<StatusInfo>{
 }
 
 fn get_display_config(ip: &str) -> Result<DisplayConfig>{
-    //获取显示器大小
     let resp = reqwest::blocking::Client::builder()
     .timeout(Duration::from_secs(2))
     .build()?
@@ -113,8 +219,9 @@ fn get_display_config(ip: &str) -> Result<DisplayConfig>{
 fn start(receiver: Receiver<Message>){
     let mut socket: Option<WebSocket<MaybeTlsStream<TcpStream>>> = None;
     let mut screen_ip = String::new();
+    let mut delta_encoder = DeltaEncoder::new(60);
 
-    println!("启动upload线程...");
+    println!("启动upload线程(差分协议+ACK)...");
 
     let mut display_config = None;
     let mut connected = false;
@@ -125,6 +232,7 @@ fn start(receiver: Receiver<Message>){
                 match msg{
                     Message::Disconnect => {
                         screen_ip = String::new();
+                        delta_encoder.reset();
                         if let Ok(mut cfg) = CONFIG.lock(){
                             cfg.0.status = Status::Disconnected
                         }
@@ -134,6 +242,7 @@ fn start(receiver: Receiver<Message>){
                     }
                     Message::Connect(ip) => {
                         screen_ip = ip.clone();
+                        delta_encoder.reset();
                         if let Ok(cfg) = get_display_config(&ip){
                             display_config = Some(cfg);
                         }else{
@@ -154,7 +263,7 @@ fn start(receiver: Receiver<Message>){
                                 drop(cfg);
                                 v
                             }else{
-                                150
+                                1
                             }
                         };
                         if display_config.is_none(){
@@ -164,7 +273,6 @@ fn start(receiver: Receiver<Message>){
                                 }
                                 Err(_err) => {
                                     eprintln!("Message::Image display config获取失败!");
-                                    eprintln!("err:?");
                                     std::thread::sleep(Duration::from_secs(3));
                                     let screen_ip_clone = screen_ip.clone();
                                     std::thread::spawn(move ||{
@@ -178,8 +286,6 @@ fn start(receiver: Receiver<Message>){
                             Some(c) => (c.rotated_width, c.rotated_height),
                             None => continue,
                         };
-                        
-                        //检查socket 是否断开
 
                         if let Some(s) = socket.as_mut(){
                             if s.can_write(){
@@ -189,7 +295,8 @@ fn start(receiver: Receiver<Message>){
                         if connected{
                             if let Some(s) = socket.as_mut(){
                                 let t1 = Instant::now();
-                                //压缩
+                                
+                                // 缩放图像
                                 let img = match fast_resize(&mut image, dst_width, dst_height){
                                     Ok(v) => v,
                                     Err(err) => {
@@ -197,27 +304,74 @@ fn start(receiver: Receiver<Message>){
                                         continue;
                                     }
                                 };
-                                let out = rgb888_to_rgb565_be(&img, img.width() as usize, img.height() as usize);
-                                let out = lz4_flex::compress_prepend_size(&out);
-                                println!("resize+转rgb565+lz4压缩:{}ms {}bytes {}x{}", t1.elapsed().as_millis(), out.len(), img.width(), img.height());
-
-                                //发送
-                                let ret1 = s.write(tungstenite::Message::Binary(out.into()));
+                                
+                                // 转换为RGB565
+                                let rgb565 = rgb888_to_rgb565_be(img.as_raw(), img.width() as usize, img.height() as usize);
+                                
+                                // 使用差分编码
+                                let (out, frame_type) = delta_encoder.encode(&rgb565, dst_width as u16, dst_height as u16);
+                                let encode_ms = t1.elapsed().as_millis();
+                                
+                                // 设置读取超时3秒
+                                if let tungstenite::stream::MaybeTlsStream::Plain(stream) = s.get_mut() {
+                                    let _ = stream.set_read_timeout(Some(Duration::from_secs(3)));
+                                }
+                                
+                                // 发送帧
+                                let send_start = Instant::now();
+                                let ret1 = s.write(tungstenite::Message::Binary(out.clone().into()));
                                 let ret2 = s.flush();
-                                if ret1.is_err() && ret2.is_err(){
+                                
+                                if ret1.is_err() || ret2.is_err(){
                                     info!("ws write:{ret1:?}");
                                     info!("ws flush:{ret2:?}");
                                     connected = false;
+                                    delta_encoder.reset();
                                     let _ = socket.take();
+                                    continue;
                                 }
-                                std::thread::sleep(Duration::from_millis(delay_ms));
+                                
+                                // 等待ACK/NACK (3秒超时)
+                                match s.read() {
+                                    Ok(msg) => {
+                                        match msg {
+                                            tungstenite::Message::Text(text) => {
+                                                if text == "NACK" {
+                                                    println!("收到NACK，重置编码器");
+                                                    delta_encoder.reset();
+                                                }
+                                                // ACK则继续
+                                            }
+                                            tungstenite::Message::Close(_) => {
+                                                connected = false;
+                                                delta_encoder.reset();
+                                                let _ = socket.take();
+                                                continue;
+                                            }
+                                            _ => {}
+                                        }
+                                    }
+                                    Err(e) => {
+                                        eprintln!("等待ACK超时/失败: {}，重置编码器", e);
+                                        delta_encoder.reset();
+                                    }
+                                }
+                                
+                                let send_ms = send_start.elapsed().as_millis();
+                                let total_ms = t1.elapsed().as_millis();
+                                println!("[FRAME] type={} {}x{} bytes={} encode={}ms send+ack={}ms total={}ms", 
+                                    frame_type, img.width(), img.height(), out.len(), encode_ms, send_ms, total_ms);
+                                
+                                if delay_ms > 0 {
+                                    std::thread::sleep(Duration::from_millis(delay_ms));
+                                }
                             }
                         }else{
                             if let Some(mut s) = socket.take(){
                                 let _ = s.close(None);
                             }
+                            delta_encoder.reset();
                             let _ = set_status(None, Status::Disconnected);
-                            //3秒后重连
                             println!("连接断开 3秒后重连:{screen_ip}");
                             if screen_ip.len() > 0{
                                 std::thread::sleep(Duration::from_secs(3));
@@ -239,7 +393,6 @@ fn start(receiver: Receiver<Message>){
 }
 
 fn connect_socket(ip: String, old_socket: &mut Option<WebSocket<MaybeTlsStream<TcpStream>>>) -> Result<()>{
-    //关闭原有连接
     if let Some(mut s) = old_socket.take(){
         let _ = s.close(None);
     }
@@ -274,14 +427,13 @@ fn fast_resize(src: &mut RgbaImage, dst_width: u32, dst_height: u32) -> Result<R
     }
 }
 
-//获取wifi屏幕参数，测试是否可以连接成功
+// 获取wifi屏幕参数，测试是否可以连接成功
 pub fn test_screen_sync(ip: String) -> Result<()>{
     let resp = reqwest::blocking::get(&format!("http://{ip}/display_config"))?
         .json::<DisplayConfig>()?;
     println!("屏幕大小:{}x{}", resp.rotated_width, resp.rotated_height);
-    //显示hello
+    // 显示hello
     let json = r#"[{"Rectangle":{"fill_color":"black","height":240,"width":240,"stroke_width":0,"left":0,"top":0}},{"Text":{"color":"white","size":20,"text":"Hello!","x":10,"y":15}},{"Text":{"color":"white","size":20,"text":"USB Screen","x":10,"y":40}}]"#;
-    //绘制
     let _resp = reqwest::blocking::Client::new()
         .post(&format!("http://{ip}/draw_canvas"))
         .body(json.as_bytes())

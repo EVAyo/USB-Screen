@@ -233,7 +233,9 @@ fn open_usb_screen(file: String) -> Result<()>{
                         let _ = wifi_screen::send_message(wifi_screen::Message::Connect(ip.to_string()));
                     }
                     wifi_screen::Status::Connected => {
-                        let _ = wifi_screen::send_message(wifi_screen::Message::Image(frame.convert()));
+                        // 使用 try_send 避免阻塞，如果上一帧还在发送中则跳过当前帧
+                        // 这样可以始终发送最新帧，提高响应速度
+                        let _ = wifi_screen::try_send_message(wifi_screen::Message::Image(frame.convert()));
                     }
                     wifi_screen::Status::Connecting => {
                         
